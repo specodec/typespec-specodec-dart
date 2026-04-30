@@ -9,9 +9,23 @@
     "watch": "tsc --watch"
   },
   "dependencies": {
+    "@specodec/typespec-specodec-core": "file:/tmp/specodec-typespec-specodec-core-0.0.1.tgz",
     "@typespec/compiler": "latest"
   },
   "devDependencies": {
     "typescript": "^5.3.0"
+  },
+  "typespec": {
+    "emitter": true,
+    "options": {
+      "@specodec/typespec-specodec-dart": {
+        "type": "object",
+        "properties": {
+          "emitter-output-dir": { "type": "string" },
+          "ignore-reserved-keywords": { "type": "boolean" }
+        },
+        "required": ["emitter-output-dir"]
+      }
+    }
   }
 }

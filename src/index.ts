@@ -6,14 +6,21 @@ import {
   Program,
   Scalar,
   Type,
+  Interface,
+  Diagnostic,
   emitFile,
   listServices,
   navigateTypesInNamespace,
   resolvePath,
 } from "@typespec/compiler";
+import {
+  checkReservedKeyword,
+  formatReservedError,
+} from "@specodec/typespec-specodec-core";
 
 interface EmitterOptions {
   "output-dir"?: string;
+  "ignore-reserved-keywords"?: boolean;
 }
 
 function toSnakeCase(name: string): string {
@@ -301,16 +308,16 @@ function collectServices(program: Program): { serviceName: string; models: Model
   const services = listServices(program);
   const result: { serviceName: string; models: Model[] }[] = [];
 
-  function collectFromNs(ns: Namespace) {
-    for (const [, iface] of ns.interfaces) {
-      const models: Model[] = [];
-      const seen = new Set<string>();
-      navigateTypesInNamespace(ns, {
-        model: (m: Model) => {
-          if (m.name && !seen.has(m.name)) { models.push(m); seen.add(m.name); }
-        },
-      });
-      result.push({ serviceName: iface.name, models });
+  function collectFromNs(ns: Namespace, iface?: Interface) {
+    const models: Model[] = [];
+    const seen = new Set<string>();
+    navigateTypesInNamespace(ns, {
+      model: (m: Model) => {
+        if (m.name && !seen.has(m.name)) { models.push(m); seen.add(m.name); }
+      },
+    });
+    if (models.length > 0) {
+      result.push({ serviceName: iface?.name || ns.name || "TestService", models });
     }
   }
 
@@ -326,8 +333,41 @@ function collectServices(program: Program): { serviceName: string; models: Model
 export async function $onEmit(context: EmitContext<EmitterOptions>): Promise<void> {
   const outputDir = context.options["output-dir"] ?? context.emitterOutputDir;
   const program = context.program;
+  const ignoreReservedKeywords = context.options["ignore-reserved-keywords"] ?? false;
+  const services = collectServices(program);
 
-  for (const svc of collectServices(program)) {
+  const reservedFieldErrors: Diagnostic[] = [];
+  for (const svc of services) {
+    for (const m of svc.models) {
+      if (!m.name) continue;
+      for (const [fieldName, prop] of m.properties) {
+        const reservedIn = checkReservedKeyword(fieldName);
+        if (reservedIn.length > 0) {
+          const message = formatReservedError(fieldName, m.name, reservedIn);
+          const diag: Diagnostic = {
+            severity: "error",
+            code: "reserved-keyword",
+            message,
+            target: prop,
+          };
+          reservedFieldErrors.push(diag);
+        }
+      }
+    }
+  }
+
+  if (reservedFieldErrors.length > 0 && !ignoreReservedKeywords) {
+    program.reportDiagnostics(reservedFieldErrors);
+    return;
+  }
+
+  if (reservedFieldErrors.length > 0 && ignoreReservedKeywords) {
+    for (const diag of reservedFieldErrors) {
+      console.warn(`Warning: ${diag.message}`);
+    }
+  }
+
+  for (const svc of services) {
     if (svc.models.length === 0) continue;
     const fileName = toSnakeCase(svc.serviceName) + "_types.dart";
     const lines: string[] = [];
