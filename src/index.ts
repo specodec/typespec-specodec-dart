@@ -10,14 +10,14 @@ import {
   Diagnostic,
   emitFile,
   listServices,
-  getNamespaceFullName,
   navigateTypesInNamespace,
   resolvePath,
 } from "@typespec/compiler";
 import {
   checkReservedKeyword,
   formatReservedError,
-} from "@specodec/typespec-specodec-core";
+  isSpecodecModel,
+} from "@specodec/typespec-emitter-core";
 
 interface EmitterOptions {
   "output-dir"?: string;
@@ -282,27 +282,18 @@ function emitModel(model: Model): string {
   return lines.join("\n");
 }
 
-function isStdLibNamespace(ns: Namespace): boolean {
-  const fullName = getNamespaceFullName(ns);
-  return fullName === "TypeSpec" || fullName.startsWith("TypeSpec.");
-}
-
 function collectServices(program: Program): { serviceName: string; models: Model[] }[] {
   const services = listServices(program);
   const result: { serviceName: string; models: Model[] }[] = [];
 
   function collectFromNs(ns: Namespace, iface?: Interface) {
-    if (isStdLibNamespace(ns)) return;
     const models: Model[] = [];
     const seen = new Set<string>();
     navigateTypesInNamespace(ns, {
       model: (m: Model) => {
-        if (m.name && !seen.has(m.name)) {
-          const modelNs = m.namespace;
-          if (modelNs && !isStdLibNamespace(modelNs)) {
-            models.push(m);
-            seen.add(m.name);
-          }
+        if (m.name && !seen.has(m.name) && isSpecodecModel(program, m)) {
+          models.push(m);
+          seen.add(m.name);
         }
       },
     });
