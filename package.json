@@ -1,6 +1,6 @@
 {
   "name": "@specodec/typespec-emitter-dart",
-  "version": "0.0.1",
+  "version": "0.0.26",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -10,10 +10,10 @@
     "watch": "tsc --watch"
   },
   "dependencies": {
-    "@specodec/typespec-emitter-core": "^0.0.1",
-    "@typespec/compiler": "1.11.0"
+    "@specodec/typespec-emitter-core": "^0.0.24"
   },
   "devDependencies": {
+    "@typespec/compiler": "^1.11.0",
     "typescript": "^5.8.0"
   },
   "typespec": {
