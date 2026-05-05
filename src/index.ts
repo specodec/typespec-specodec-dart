@@ -163,7 +163,7 @@ function emitModel(model: Model): string {
   lines.push(`}`);
   lines.push(``);
 
-  lines.push(`late final ${name}Codec = SpecCodec<${name}>(`);
+  lines.push(`final SpecCodec<${name}> ${name}Codec = SpecCodec<${name}>(`);
   lines.push(`  encode: (w, obj) => write${name}(w, obj),`);
   lines.push(`  decode: (r) {`);
   for (const prop of props) {
