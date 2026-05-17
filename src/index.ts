@@ -22,6 +22,11 @@ import {
 
 export type EmitterOptions = BaseEmitterOptions;
 
+let _tmpCounter = 0;
+function nextTmp(): string {
+  return `_tmp${_tmpCounter++}`;
+}
+
 function dartScalarType(name: string): string {
   switch (name) {
     case "string":
@@ -127,14 +132,6 @@ function writeExpr(expr: string, type: Type, w: string): string {
 }
 
 function readExpr(type: Type, optional?: boolean): string {
-  if (isArrayType(type)) {
-    const elem = arrayElementType(type)!;
-    return `() { final list = <${dartBaseType(elem)}>[]; r.beginArray(); while (r.hasNextElement()) { list.add(${readExpr(elem)}); } r.endArray(); return list; }()`;
-  }
-  if (isRecordType(type)) {
-    const elem = recordElementType(type)!;
-    return `() { final map = <String, ${dartBaseType(elem)}>{}; r.beginObject(); while (r.hasNextField()) { final key = r.readFieldName(); map[key] = ${readExpr(elem)}; } r.endObject(); return map; }()`;
-  }
   const n = scalarName(type);
   if (n) {
     switch (n) {
@@ -174,6 +171,32 @@ function readExpr(type: Type, optional?: boolean): string {
     return `${(type as Model).name}Codec.decode(r)`;
   }
   return "r.readString()";
+}
+
+function generateFieldRead(L: string[], f: { name: string; type: any; optional: boolean }, varName: string, indent: string): void {
+  const tmp = nextTmp();
+  if (f.optional) {
+    L.push(`${indent}if (r.isNull()) { r.readNull(); ${varName} = null; break; }`);
+  }
+  if (isArrayType(f.type)) {
+    const elem = arrayElementType(f.type)!;
+    L.push(`${indent}final ${tmp} = <${dartBaseType(elem)}>[];`);
+    L.push(`${indent}r.beginArray();`);
+    L.push(`${indent}while (r.hasNextElement()) {`);
+    L.push(`${indent}  ${tmp}.add(${readExpr(elem)});`);
+    L.push(`${indent}}`);
+    L.push(`${indent}r.endArray();`);
+    L.push(`${indent}${varName} = ${tmp};`);
+  } else if (isRecordType(f.type)) {
+    const elem = recordElementType(f.type)!;
+    L.push(`${indent}final ${tmp} = <String, ${dartBaseType(elem)}>{};`);
+    L.push(`${indent}r.beginObject();`);
+    L.push(`${indent}while (r.hasNextField()) {`);
+    L.push(`${indent}  ${tmp}[r.readFieldName()] = ${readExpr(elem)};`);
+    L.push(`${indent}}`);
+    L.push(`${indent}r.endObject();`);
+    L.push(`${indent}${varName} = ${tmp};`);
+  }
 }
 
 function generateEnumCode(e: EnumInfo): string {
@@ -316,7 +339,13 @@ function emitModel(model: Model): string {
   lines.push(`      switch (r.readFieldName()) {`);
   for (const prop of props) {
     const df = toCamelCase(prop.name);
-    lines.push(`        case '${prop.name}': ${df}Val = ${readExpr(prop.type, prop.optional)}; break;`);
+    if (isArrayType(prop.type) || isRecordType(prop.type)) {
+      lines.push(`        case '${prop.name}':`);
+      generateFieldRead(lines, prop, `${df}Val`, "          ");
+      lines.push(`          break;`);
+    } else {
+      lines.push(`        case '${prop.name}': ${df}Val = ${readExpr(prop.type, prop.optional)}; break;`);
+    }
   }
   lines.push(`        default: r.skip();`);
   lines.push(`      }`);
