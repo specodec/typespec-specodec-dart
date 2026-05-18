@@ -24,7 +24,7 @@ export type EmitterOptions = BaseEmitterOptions;
 
 let _tmpCounter = 0;
 function nextTmp(): string {
-  return `_tmp`;
+  return `tmp`;
 }
 
 function dartScalarType(name: string): string {
@@ -131,7 +131,7 @@ function writeExpr(expr: string, type: Type, w: string): string {
   return `// TODO: unknown type`;
 }
 
-function readExpr(type: Type, optional?: boolean): string {
+function readExpr(type: Type): string {
   const n = scalarName(type);
   if (n) {
     switch (n) {
@@ -167,36 +167,80 @@ function readExpr(type: Type, optional?: boolean): string {
   if (type.kind === "Enum") return "r.readString()";
   if (isUnionType(type)) return `decode${(type as any).name}(r)`;
   if (type.kind === "Model" && (type as Model).name) {
-    if (optional) return `r.isNull() ? (() { r.readNull(); return null; })() : ${(type as Model).name}Codec.decode(r)`;
     return `${(type as Model).name}Codec.decode(r)`;
   }
   return "r.readString()";
 }
 
-function generateFieldRead(L: string[], f: { name: string; type: any; optional: boolean }, varName: string, indent: string): void {
-  const tmp = nextTmp();
-  if (f.optional) {
-    L.push(`${indent}if (r.isNull()) { r.readNull(); ${varName} = null; break; }`);
-  }
+function generateFieldRead(f: { name: string; type: any; optional: boolean }): { stmts: string[]; value: string } {
   if (isArrayType(f.type)) {
     const elem = arrayElementType(f.type)!;
-    L.push(`${indent}final ${tmp} = <${dartBaseType(elem)}>[];`);
-    L.push(`${indent}r.beginArray();`);
-    L.push(`${indent}while (r.hasNextElement()) {`);
-    L.push(`${indent}  ${tmp}.add(${readExpr(elem)});`);
-    L.push(`${indent}}`);
-    L.push(`${indent}r.endArray();`);
-    L.push(`${indent}${varName} = ${tmp};`);
-  } else if (isRecordType(f.type)) {
-    const elem = recordElementType(f.type)!;
-    L.push(`${indent}final ${tmp} = <String, ${dartBaseType(elem)}>{};`);
-    L.push(`${indent}r.beginObject();`);
-    L.push(`${indent}while (r.hasNextField()) {`);
-    L.push(`${indent}  ${tmp}[r.readFieldName()] = ${readExpr(elem)};`);
-    L.push(`${indent}}`);
-    L.push(`${indent}r.endObject();`);
-    L.push(`${indent}${varName} = ${tmp};`);
+    const tmp = nextTmp();
+    const stmts: string[] = [];
+    if (f.optional) {
+      stmts.push(`${tmp} = null;`);
+      stmts.push(`if (r.isNull()) {`);
+      stmts.push(`  r.readNull();`);
+      stmts.push(`} else {`);
+      stmts.push(`  ${tmp} = <${dartBaseType(elem)}>[];`);
+      stmts.push(`  r.beginArray();`);
+      stmts.push(`  while (r.hasNextElement()) {`);
+      stmts.push(`    ${tmp}!.add(${readExpr(elem)});`);
+      stmts.push(`  }`);
+      stmts.push(`  r.endArray();`);
+      stmts.push(`}`);
+      return { stmts, value: tmp };
+    } else {
+      stmts.push(`${tmp} = <${dartBaseType(elem)}>[];`);
+      stmts.push(`r.beginArray();`);
+      stmts.push(`while (r.hasNextElement()) {`);
+      stmts.push(`  ${tmp}.add(${readExpr(elem)});`);
+      stmts.push(`}`);
+      stmts.push(`r.endArray();`);
+      return { stmts, value: tmp };
+    }
   }
+  if (isRecordType(f.type)) {
+    const elem = recordElementType(f.type)!;
+    const tmp = nextTmp();
+    const stmts: string[] = [];
+    if (f.optional) {
+      stmts.push(`${tmp} = null;`);
+      stmts.push(`if (r.isNull()) {`);
+      stmts.push(`  r.readNull();`);
+      stmts.push(`} else {`);
+      stmts.push(`  ${tmp} = <String, ${dartBaseType(elem)}>{};`);
+      stmts.push(`  r.beginObject();`);
+      stmts.push(`  while (r.hasNextField()) {`);
+      stmts.push(`    ${tmp}![r.readFieldName()] = ${readExpr(elem)};`);
+      stmts.push(`  }`);
+      stmts.push(`  r.endObject();`);
+      stmts.push(`}`);
+      return { stmts, value: tmp };
+    } else {
+      stmts.push(`${tmp} = <String, ${dartBaseType(elem)}>{};`);
+      stmts.push(`r.beginObject();`);
+      stmts.push(`while (r.hasNextField()) {`);
+      stmts.push(`  ${tmp}[r.readFieldName()] = ${readExpr(elem)};`);
+      stmts.push(`}`);
+      stmts.push(`r.endObject();`);
+      return { stmts, value: tmp };
+    }
+  }
+  if (f.optional && ((f.type.kind === "Model" && (f.type as Model).name) || isUnionType(f.type))) {
+    const dartType = dartBaseType(f.type);
+    const tmp = nextTmp();
+    const stmts: string[] = [];
+    stmts.push(`${dartType}? ${tmp};`);
+    stmts.push(`if (r.isNull()) {`);
+    stmts.push(`  r.readNull();`);
+    stmts.push(`  ${tmp} = null;`);
+    stmts.push(`} else {`);
+    stmts.push(`  ${tmp} = ${readExpr(f.type)};`);
+    stmts.push(`}`);
+    return { stmts, value: tmp };
+  }
+  return { stmts: [], value: readExpr(f.type) };
 }
 
 function generateEnumCode(e: EnumInfo): string {
@@ -339,12 +383,17 @@ function emitModel(model: Model): string {
   lines.push(`      switch (r.readFieldName()) {`);
   for (const prop of props) {
     const df = toCamelCase(prop.name);
-    if (isArrayType(prop.type) || isRecordType(prop.type)) {
-      lines.push(`        case '${prop.name}':`);
-      generateFieldRead(lines, prop, `${df}Val`, "          ");
+    const result = generateFieldRead({ name: prop.name, type: prop.type, optional: prop.optional });
+    if (result.stmts.length > 0) {
+      lines.push(`        case '${prop.name}': {`);
+      for (const stmt of result.stmts) {
+        lines.push(`          ${stmt}`);
+      }
+      lines.push(`          ${df}Val = ${result.value};`);
       lines.push(`          break;`);
+      lines.push(`        }`);
     } else {
-      lines.push(`        case '${prop.name}': ${df}Val = ${readExpr(prop.type, prop.optional)}; break;`);
+      lines.push(`        case '${prop.name}': ${df}Val = ${result.value}; break;`);
     }
   }
   lines.push(`        default: r.skip();`);
