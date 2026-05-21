@@ -27,7 +27,7 @@ function nextTmp(): string {
   return `tmp${_tmpCounter++}`;
 }
 
-function dartScalarType(name: string): string {
+export function dartScalarType(name: string): string {
   switch (name) {
     case "string":
       return "String";
@@ -56,7 +56,7 @@ function dartScalarType(name: string): string {
   }
 }
 
-function dartBaseType(type: Type): string {
+export function dartBaseType(type: Type): string {
   if (isArrayType(type)) return `List<${dartBaseType(arrayElementType(type)!)}>`;
   if (isRecordType(type)) return `Map<String, ${dartBaseType(recordElementType(type)!)}>`;
   const n = scalarName(type);
@@ -67,11 +67,11 @@ function dartBaseType(type: Type): string {
   return "dynamic";
 }
 
-function dartTypeFor(type: Type, optional: boolean): string {
+export function dartTypeFor(type: Type, optional: boolean): string {
   return optional ? `${dartBaseType(type)}?` : dartBaseType(type);
 }
 
-function defaultVal(type: Type): string {
+export function defaultVal(type: Type): string {
   const n = scalarName(type);
   if (n === "string") return "''";
   if (n === "boolean") return "false";
@@ -84,7 +84,7 @@ function defaultVal(type: Type): string {
   return "null";
 }
 
-function writeExpr(expr: string, type: Type, w: string): string {
+export function writeExpr(expr: string, type: Type, w: string): string {
   if (isArrayType(type)) {
     const elem = arrayElementType(type)!;
     return `${w}.beginArray(${expr}.length); for (final item in ${expr}) { ${w}.nextElement(); ${writeExpr("item", elem, w)}; } ${w}.endArray()`;
@@ -131,7 +131,7 @@ function writeExpr(expr: string, type: Type, w: string): string {
   return `// TODO: unknown type`;
 }
 
-function readExpr(type: Type): string {
+export function readExpr(type: Type): string {
   const n = scalarName(type);
   if (n) {
     switch (n) {
@@ -172,7 +172,7 @@ function readExpr(type: Type): string {
   return "r.readString()";
 }
 
-function generateFieldRead(f: { name: string; type: any; optional: boolean }): { stmts: string[]; value: string } {
+export function generateFieldRead(f: { name: string; type: any; optional: boolean }): { stmts: string[]; value: string } {
   if (isArrayType(f.type)) {
     const elem = arrayElementType(f.type)!;
     const tmp = nextTmp();
@@ -245,7 +245,7 @@ function generateFieldRead(f: { name: string; type: any; optional: boolean }): {
   return { stmts: [], value: readExpr(f.type) };
 }
 
-function generateEnumCode(e: EnumInfo): string {
+export function generateEnumCode(e: EnumInfo): string {
   const lines: string[] = [];
   lines.push(`enum ${e.name} {`);
   const memberLines = e.members.map((m) => `  ${m.name}(${m.value})`);
@@ -320,7 +320,7 @@ function generateUnionCode(u: UnionInfo, L: string[]): void {
   L.push(``);
 }
 
-function generateModelCode(model: Model): string {
+export function generateModelCode(model: Model): string {
   const name = model.name;
   const props = [...model.properties.values()];
   const requiredFields = props.filter((p) => !p.optional);
