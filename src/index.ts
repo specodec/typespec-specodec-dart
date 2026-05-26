@@ -364,49 +364,49 @@ export function generateModelCode(model: Model): string {
   lines.push(`}`);
   lines.push(``);
 
-  lines.push(`final SpecCodec<${name}> ${name}Codec = SpecCodec<${name}>(`);
-  lines.push(`  encode: (w, obj) => write${name}(w, obj),`);
-  lines.push(`  decode: (r) {`);
+  lines.push(`${name} decode${name}(SpecReader r) {`);
   for (const prop of props) {
     const dartType = dartBaseType(prop.type);
     const df = toCamelCase(prop.name);
     if (prop.optional) {
-      lines.push(`    ${dartType}? ${df}Val;`);
+      lines.push(`  ${dartType}? ${df}Val;`);
     } else if (isModelType(prop.type)) {
-      lines.push(`    late ${dartType} ${df}Val;`);
+      lines.push(`  late ${dartType} ${df}Val;`);
     } else if (isUnionType(prop.type)) {
-      lines.push(`    ${dartType} ${df}Val = ${dartType}Undefined(SpecUndefined.instance);`);
+      lines.push(`  ${dartType} ${df}Val = ${dartType}Undefined(SpecUndefined.instance);`);
     } else {
-      lines.push(`    ${dartType} ${df}Val = ${defaultVal(prop.type)};`);
+      lines.push(`  ${dartType} ${df}Val = ${defaultVal(prop.type)};`);
     }
   }
-  lines.push(`    r.beginObject();`);
-  lines.push(`    while (r.hasNextField()) {`);
-  lines.push(`      switch (r.readFieldName()) {`);
+  lines.push(`  r.beginObject();`);
+  lines.push(`  while (r.hasNextField()) {`);
+  lines.push(`    switch (r.readFieldName()) {`);
   for (const prop of props) {
     const df = toCamelCase(prop.name);
     const result = generateFieldRead({ name: prop.name, type: prop.type, optional: prop.optional });
     if (result.stmts.length > 0) {
-      lines.push(`        case '${prop.name}': {`);
+      lines.push(`      case '${prop.name}': {`);
       for (const stmt of result.stmts) {
-        lines.push(`          ${stmt}`);
+        lines.push(`        ${stmt}`);
       }
-      lines.push(`          ${df}Val = ${result.value};`);
-      lines.push(`          break;`);
-      lines.push(`        }`);
+      lines.push(`        ${df}Val = ${result.value};`);
+      lines.push(`        break;`);
+      lines.push(`      }`);
     } else {
-      lines.push(`        case '${prop.name}': ${df}Val = ${result.value}; break;`);
+      lines.push(`      case '${prop.name}': ${df}Val = ${result.value}; break;`);
     }
   }
-  lines.push(`        default: r.skip();`);
-  lines.push(`      }`);
+  lines.push(`      default: r.skip();`);
   lines.push(`    }`);
-  lines.push(`    r.endObject();`);
+  lines.push(`  }`);
+  lines.push(`  r.endObject();`);
   lines.push(
-    `    return ${name}(${props.map((p) => `${toCamelCase(p.name)}: ${toCamelCase(p.name)}Val`).join(", ")});`,
+    `  return ${name}(${props.map((p) => `${toCamelCase(p.name)}: ${toCamelCase(p.name)}Val`).join(", ")});`,
   );
-  lines.push(`  },`);
-  lines.push(`);`);
+  lines.push(`}`);
+  lines.push(``);
+
+  lines.push(`final SpecCodec<${name}> ${name}Codec = SpecCodec<${name}>(encode: write${name}, decode: decode${name});`);
   lines.push(``);
 
   return lines.join("\n");
